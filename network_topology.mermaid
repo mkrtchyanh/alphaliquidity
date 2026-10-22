@@ -1,0 +1,84 @@
+flowchart LR
+    users["Fund Traders, Fund Admins,<br/>Fund bots (API)"]
+    ext["External systems<br/>Compliance System, Settlement and Custody,<br/>Identity Provider, Notification Service"]
+
+    subgraph dmz["DMZ"]
+        rp["Reverse Proxy<br/>TLS terminated here<br/>HTTP, HTTPS, WebSocket"]
+    end
+
+    subgraph k8s["Kubernetes cluster nodes"]
+        ing["Ingress"]
+        pods["Service pods<br/>Sell Offer, Balance, SignalR Hub,<br/>Compliance Gateway, Tenant, Audit"]
+        ing --> pods
+    end
+
+    subgraph egress["Egress proxy segment"]
+        ep["Egress proxy<br/>destination allowlist, logs"]
+    end
+
+    subgraph db["DB nodes"]
+        sqlp["SQL Server primary"]
+        sqls["Sync replica<br/>automatic failover"]
+        sqla["Async replica<br/>manual promotion"]
+        sqlp -->|"sync commit"| sqls
+        sqlp -.->|"async"| sqla
+    end
+
+    subgraph kafkaseg["Kafka nodes"]
+        k1["Broker 1"]
+        k2["Broker 2<br/>min.insync.replicas=2"]
+        conn["Kafka Connect, Debezium<br/>same hosts as the brokers<br/>CDC from the primary"]
+        k1 <--> k2
+        conn --> k1
+    end
+
+    subgraph redisseg["Redis nodes"]
+        r1["Redis primary<br/>SignalR backplane"]
+        r2["Redis replica<br/>fault tolerance only"]
+        r1 -.->|"async"| r2
+    end
+
+    subgraph quorum["Quorum segment"]
+        wit["Witness node<br/>no data<br/>third vote: SQL Server AG,<br/>Kafka KRaft, Redis Sentinel"]
+    end
+
+    subgraph mon["Monitoring segment"]
+        obs["Metrics, logs, traces,<br/>dashboards, alerts,<br/>SLA probes"]
+    end
+
+    subgraph bak["Backup segment"]
+        bk["Backup storage<br/>DB full and log backups,<br/>audit store backups"]
+    end
+
+    subgraph cicd["CI/CD nodes"]
+        ci["Build and push agents"]
+    end
+
+    bastion["VPN + SSH bastion"]
+
+    subgraph reg["Docker registry segment"]
+        registry["Docker registry"]
+    end
+
+    users -->|"HTTPS, WSS"| rp
+    rp -->|"HTTP, HTTPS, WebSocket"| ing
+    pods <-->|"SQL, in and out"| sqlp
+    pods -->|"produce, consume"| k1
+    pods <-->|"SignalR backplane"| r1
+    conn -->|"CDC reads only"| sqlp
+    pods -->|"outbound to external systems"| ep
+    ep --> ext
+
+    wit -.- sqlp
+    wit -.- k1
+    wit -.- r1
+
+    sqlp -->|"backups"| bk
+    pods -.->|"telemetry"| obs
+    db -.->|"telemetry"| obs
+    kafkaseg -.->|"telemetry"| obs
+    redisseg -.->|"telemetry"| obs
+
+    ci ==>|"VPN"| bastion
+    bastion ==>|"SSH, docker push"| registry
+    k8s -->|"docker pull, only traffic out of the cluster nodes toward the registry"| registry

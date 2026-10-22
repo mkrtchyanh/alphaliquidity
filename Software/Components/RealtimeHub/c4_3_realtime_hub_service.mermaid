@@ -1,0 +1,43 @@
+C4Component
+    title SignalR Hub Service - Component Diagram (C4 Level 3)
+
+    Container(webapp, "Trading Web App", "SPA", "SignalR client.")
+    Container(offers, "Sell Offer Service", ".NET", "Offer state, snapshots.")
+    ContainerQueue(kafka, "Kafka", "Kafka", "Events through CDC.")
+    ContainerQueue(backplane, "SignalR Backplane", "Redis / Azure SignalR", "Fan-out across instances.")
+    Container(obs, "Observability and SLA Probes", "Synthetic clients", "Latency measurement.")
+    Container(gateway, "API Gateway", "ASP.NET Core", "Token validation.")
+
+    Container_Boundary(svc, "SignalR Hub Service") {
+        Component(auth, "Connection Authenticator", "ASP.NET Core", "Validates the token and tenant on connect.")
+        Component(hub, "Trading Hub", "SignalR hub", "Client entry point. Subscribe to and leave a currency pair.")
+        Component(subs, "Subscription Manager", ".NET", "One group per currency pair. Tracks which connections view which pair.")
+        Component(consumer, "State Event Consumer", ".NET", "Receives OfferStateChanged and depth events (feeding path from Sell Offer is an open decision). Sequence check per offer.")
+        Component(fan, "Fan-out Dispatcher", ".NET", "Sends one message to the pair group on every instance through the backplane.")
+        Component(gap, "Gap Detector", ".NET", "Compares event versions. On a gap, tells the client to resync.")
+        Component(snap, "Snapshot Service", "REST client and cache", "Returns current offers and depth for a pair on connect, reconnect or gap.")
+        Component(hb, "Heartbeat and Health", ".NET", "Marks clients without a healthy connection as stale so their Purchase button is disabled.")
+        Component(dur, "Kafka Consumer", ".NET", "Reads offer events from Kafka (CDC). Repairs missed events.")
+        Component(metrics, "Latency Metrics", ".NET", "Stamps events with commit time and publishes delivery timing.")
+    }
+
+    Rel(webapp, hub, "Connect, subscribe to pair", "SignalR WebSocket")
+    Rel(gateway, auth, "Token validation")
+    Rel(hub, auth, "Authenticates")
+    Rel(hub, subs, "Join and leave pair group")
+    Rel(offers, consumer, "OfferStateChanged, depth", "Open")
+    Rel(consumer, gap, "Version check")
+    Rel(consumer, fan, "Dispatch")
+    Rel(fan, subs, "Resolves group")
+    Rel(fan, backplane, "Publish to instances", "Pub/sub")
+    Rel(fan, webapp, "Freeze, unfreeze, removal, new offers", "SignalR")
+    Rel(gap, snap, "Requests snapshot")
+    Rel(hub, snap, "Snapshot on connect")
+    Rel(snap, offers, "Reads current state", "REST")
+    Rel(hb, hub, "Stale connections")
+    Rel(kafka, dur, "Subscribe")
+    Rel(dur, consumer, "Replays missed events")
+    Rel(consumer, metrics, "Commit time")
+    Rel(obs, hub, "Synthetic client", "SignalR")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

@@ -1,0 +1,43 @@
+---
+title: Sell Offer State Model (state is derived from the offer row and the clock)
+---
+stateDiagram-v2
+    [*] --> Available_For_Buying: Offer published with expires_on
+
+    Available_For_Buying --> Available_For_Processing: Lock granted
+    Available_For_Processing --> Available_For_Paying: Lock granted
+    Available_For_Paying --> Available_For_Paying: Owner repeats request, lock exchanged
+    Available_For_Paying --> Available_For_Buying: Payment failed or paying interval ended
+    Available_For_Paying --> Payment_Pending: Pre-payment completed
+    Available_For_Paying --> Expired: Paying interval ended after expires_on
+    Payment_Pending --> Executed: Pre-payment completed
+    Payment_Pending --> Available_For_Buying: Pre-payment expired
+
+    Available_For_Buying --> Withdrawn: Withdrawn
+
+    Executed --> [*]
+    Withdrawn --> [*]
+
+    note right of Available_For_Buying
+        Visible to buyers, Purchase enabled.
+        Block returns to the pool on Expired.
+    end note
+
+    note right of Available_For_Processing
+        Reached only through a successful lock.
+        Now is before paying_until.
+        Checked before Expired, so a paying offer
+        past expires_on is not cut off.
+    end note
+
+    note right of Available_For_Paying
+        Reached only through a successful lock.
+        Now is before paying_until.
+        Checked before Expired, so a paying offer
+        past expires_on is not cut off.
+    end note
+
+    note right of Payment_Pending
+        Reached only through a successful lock.
+        Waits for pre-payment confirmation or expiration.
+    end note

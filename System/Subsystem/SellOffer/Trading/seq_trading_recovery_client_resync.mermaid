@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    actor Buyer as Buyer (client app)
+    participant RT as Real-time Sync (SignalR)
+    participant TEN as Tenant Management Subsystem
+    participant SO as Sell Offer Subsystem (Trading)
+
+    Note over Buyer,SO: SCENARIO A - connection drops and reconnects
+
+    Buyer--xRT: Connection lost
+    RT->>RT: Heartbeat missed, client marked stale
+    Note over Buyer: Client disables all Purchase buttons and shows a reconnecting banner
+    SO-)RT: OfferStateChanged events continue (versions advance)
+    RT--xBuyer: Cannot deliver, client offline
+
+    Buyer->>RT: Reconnect with token, subscribe to pair
+    RT->>TEN: Validate identity and tenant visibility
+    TEN-->>RT: Allowed
+    RT->>RT: Rejoin the pair group
+    RT->>SO: Read current offers and depth with versions
+    SO-->>RT: Snapshot
+    RT-->>Buyer: Snapshot, then live events newer than the snapshot versions (no gap)
+    Note over Buyer: Buttons are enabled only for offers that the snapshot shows as Available
+
+    Note over Buyer,SO: SCENARIO B - gap detected while connected
+
+    SO-)RT: OfferStateChanged (offer X, version 12)
+    RT-)Buyer: Event version 12
+    Buyer->>Buyer: Client holds version 10 for offer X, gap detected
+    Buyer->>RT: Request resync (pair)
+    alt Missed events still in the durable backlog
+        RT-->>Buyer: Replay of the missed events in order
+    else Not available
+        RT->>SO: Read current offers and depth
+        SO-->>RT: Snapshot
+        RT-->>Buyer: Snapshot replaces local state
+    end
+
+    Note over Buyer,SO: SCENARIO C - stale click, button still enabled on an out-of-date screen
+
+    Buyer->>SO: Purchase click on an offer that is already locked or gone
+    SO-->>Buyer: Rejected OFFER_LOCKED with retryAfter, or OFFER_NOT_AVAILABLE
+    Buyer->>RT: Request resync (pair)
+    RT-->>Buyer: Snapshot or missed events
+    Note over Buyer,SO: The server is the authority. A stale screen can cause a rejected click, never a double sale
+
+    Note over Buyer,SO: SCENARIO D - Real-time Sync unavailable for everyone (open decision)
+    Note over Buyer,SO: Hard dependency: trading is halted until sync returns. Soft dependency: trading continues, screens go stale, the server rejects invalid clicks

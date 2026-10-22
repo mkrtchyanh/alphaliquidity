@@ -1,0 +1,25 @@
+C4Context
+    title Sell Offer (Trading) Subsystem - System Context (C4 Level 1)
+
+    Person(buyer, "Buyer (Fund Trader)", "Acts for a Fund. Views offers and depth, clicks Purchase to take the lock on an offer.")
+
+    System(offers, "Sell Offer (Trading) Subsystem", "Owns the trading state of every offer: Available, Locked_For_Pre_Processing, Locked_For_Processing, Executed. Grants the atomic lock with fencing token, TTLs and failure codes. Derives liquidity depth. Authentication and rate limits are applied at the API edge before a lock request arrives.")
+
+    System(som, "Sell Offer Management", "Creates, validates and prices offers, then publishes them as Available. Requests withdrawal or expiry.")
+    System(txn, "Transaction", "Receives lock grants as Transaction Requests, validates, executes, reports phase changes and the outcome.")
+    System(rt, "Real-time Sync", "Delivers offer state events to traders viewing a currency pair, in under 150 ms.")
+    System(audit, "Audit", "Receives audit events from every subsystem, keeps an append-only tamper-evident history, serves reconstruction of any offer or purchase. Never on the trade path.")
+
+    Rel(buyer, offers, "Requests lock (Purchase click)", "HTTPS")
+    Rel(offers, rt, "Publishes offer state events with version", "Events")
+    Rel(rt, buyer, "Pushes freeze, unfreeze, removal", "SignalR (WebSocket)")
+
+    Rel(som, offers, "Publishes offer as Available, requests withdrawal or expiry", "Command")
+    Rel(offers, som, "Offer state changes (locked, available, executed)", "Event")
+
+    Rel(offers, txn, "Lock granted, creates Transaction Request", "Command / event")
+    Rel(txn, offers, "Phase change, success or failure with code", "Event")
+
+    Rel(offers, audit, "Every state change with fencing token, actor, old and new state", "Events")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

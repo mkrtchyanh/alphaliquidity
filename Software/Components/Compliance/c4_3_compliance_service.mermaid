@@ -1,0 +1,26 @@
+C4Component
+    title Compliance Gateway - Component Diagram (C4 Level 3)
+
+    Container(offers, "Sell Offer Service", ".NET", "Validates buyers and suppliers.")
+    Container(tenant, "Tenant Service", ".NET", "Onboarding requests.")
+    ContainerDb(compdb, "Compliance Replica", "MS SQL Server", "Status and limits per Party.")
+    System_Ext(compsys, "Compliance System", "External. Owns onboarding, KYC, AML, limits, sanctions.")
+
+    Container_Boundary(svc, "Compliance Gateway") {
+        Component(lookup, "Eligibility API", ".NET", "Fast local lookup: status, limits, sanctions flag. No external call on the trade path.")
+        Component(limits, "Limits Check", ".NET", "Per trade, daily and per pair limits per Party and Trader from the replica.")
+        Component(sync, "Replica Sync", ".NET", "Receives status and limit updates from the Compliance System and updates the replica.")
+        Component(onbf, "Onboarding Facade", ".NET", "Forwards onboarding requests to the Compliance System and tracks progress.")
+        Component(repo, "Replica Repository", "Data access", "Stores status and limits with version and valid-until time.")
+    }
+
+    Rel(offers, lookup, "Validate buyer, supplier eligibility", "Local lookup")
+    Rel(lookup, limits, "Limit check")
+    Rel(lookup, repo, "Reads")
+    Rel(compsys, sync, "Status and limit updates", "Feed")
+    Rel(sync, repo, "Updates")
+    Rel(tenant, onbf, "Onboarding requests")
+    Rel(onbf, compsys, "Onboarding", "API")
+    Rel(repo, compdb, "SQL")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

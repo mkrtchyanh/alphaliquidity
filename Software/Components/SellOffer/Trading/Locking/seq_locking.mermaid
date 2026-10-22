@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    participant LS as Lock Service
+    participant DB as Sell Offers Database (offer_lock)
+
+    loop Until Locked or Failed definitively
+        Note over LS, DB: Transaction Start / Retry Loop
+        LS ->> DB: Begin a new DB Transaction
+        LS ->> LS: Requests lock by passing TTL and Offer Id
+        LS ->> LS: Get latest lock for offer
+
+        alt Lock Present
+            LS-->>LS: Lock status expiration/release
+            alt Lock active(not expired and not released)
+                alt holder_ref matches with current holder
+                    LS-->>LS: extend expiration and Exit
+                else
+                    LS-->>LS: Exit with ALREADY_LOCKED
+                end
+            else Lock Expired/Released
+                LS-->>LS: insert lock record (offerId, version, expires_at, holder_ref) by incrementing version
+                alt Lock record inserted
+                    LS ->> LS: Exit WITH LOCKED, lock(expiration)
+                else Failed due to unique constraint (offerId, version)
+                    Note over LS: Rollback & Retry from the beginning
+                end
+            end
+        else Lock Not Present
+            LS ->> LS: insert lock record (offerId, version, expires_at, holder_ref) by passing initial version 1
+            alt Lock record inserted
+                LS ->> LS: Exit WITH LOCKED, lock(expiration)
+            else Failed due to unique constraint (offerId, version)
+                Note over LS: Rollback & Retry from the beginning
+            end
+        end
+    end
+
+

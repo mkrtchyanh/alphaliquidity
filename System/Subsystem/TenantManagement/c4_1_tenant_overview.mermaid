@@ -1,0 +1,36 @@
+C4Context
+    title Tenant Management Subsystem - System Context (C4 Level 1)
+
+    Person(admin, "Fund Admin", "Manages users, roles and API credentials. Requests deposits and withdrawals.")
+    Person(trader, "Fund Trader", "Views balances, offers and own history.")
+    Person(operator, "Platform Operator", "Onboards, configures and suspends tenants.")
+
+    System(tenant, "Tenant Management Subsystem", "Owns the tenant (hedge fund) profile and status, users, roles and permissions, API credentials, IP allow-lists and notification settings. Enforces tenant data isolation. Answers authorization queries from other subsystems and sends commands to the subsystems that own balances and compliance.")
+
+    System(som, "Sell Offer Management", "Creates and publishes the tenant's block offers. Asks Tenant Management to authorize each request, serves the tenant's own payment transaction history.")
+    System(balance, "Balance Crediting / Debiting", "Owns accounts and balances. Receives deposit and withdrawal requests, serves balance reads.")
+    System(cgw, "Compliance Gateway", "Relays onboarding to the external Compliance System and publishes Party approved, suspended and limit changes.")
+    System(audit, "Audit", "Receives audit events from every subsystem, keeps an append-only tamper-evident history, serves reconstruction of any offer or purchase. Never on the trade path.")
+
+    System_Ext(fundsys, "Fund Trading Systems", "Fund bots using the API with tenant credentials.")
+    System_Ext(idp, "Identity Provider", "SSO / OIDC, MFA, optional federation with the fund's own identity provider.")
+    System_Ext(notify, "Notification Service", "Email and webhooks to tenants.")
+
+    Rel(admin, tenant, "Manages users, roles, credentials, funding requests", "HTTPS")
+    Rel(trader, tenant, "Views balances, offers, history", "HTTPS")
+    Rel(operator, tenant, "Onboards, configures, suspends", "HTTPS")
+    Rel(fundsys, tenant, "Programmatic access", "REST API, API credentials")
+
+    Rel(tenant, idp, "Authenticates users, federates identity", "OIDC")
+    Rel(tenant, notify, "Sends notifications and webhooks", "API")
+
+    Rel(som, tenant, "Authorizes user, checks tenant status", "Query")
+    Rel(tenant, balance, "Deposit and withdrawal requests, balance reads", "Command / query")
+    Rel(balance, tenant, "Balance updates, request status", "Event")
+    Rel(tenant, cgw, "Onboarding requests", "Command")
+    Rel(cgw, tenant, "Approved, suspended, limits", "Event")
+    Rel(tenant, som, "Reads own Payment transactions", "Query")
+
+    Rel(tenant, audit, "User access, credential and tenant status changes", "Events")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

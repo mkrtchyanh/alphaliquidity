@@ -1,0 +1,27 @@
+C4Context
+    title Audit Subsystem - System Context (C4 Level 1)
+
+    Person(auditor, "Auditor", "Reviews the history of any offer, purchase, Party or user. Exports records for regulator requests.")
+    Person(operator, "Platform Operator", "Investigates incidents.")
+
+    System(audit, "Audit Subsystem", "Receives audit events from every subsystem on the durable path. Keeps an append-only, tamper-evident history indexed by offer, request, Transaction, Party, tenant and user. Reconstructs the full history of any offer or purchase. Applies retention and legal hold. Exports records. Records history only, never decides and never blocks a trade.")
+
+    System(offers, "Sell Offer Management and Trading", "Offer lifecycle with the pricing breakdown, offer state change, offer payment.")
+    System(bal, "Balance Crediting / Debiting", "Ledger batches, holds and account status changes.")
+    System(tenant, "Tenant Management", "User access, credential and tenant status changes.")
+    System(cgw, "Compliance Gateway", "Every compliance decision with status version and rule used.")
+
+    System_Ext(idp, "Identity Provider", "Authenticates auditors and platform staff.")
+
+    Rel(offers, audit, "Offer state changes", "Events")
+
+
+    Rel(bal, audit, "Credit/debit, account status", "Events")
+    Rel(tenant, audit, "User, credential and tenant changes", "Events")
+    Rel(cgw, audit, "Compliance decisions used by each trade", "Events")
+
+    Rel(auditor, audit, "Reviews trail, reconstructs history, exports records", "HTTPS")
+    Rel(operator, audit, "Investigates incidents", "HTTPS")
+    Rel(audit, idp, "Authenticates users", "OIDC")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

@@ -1,0 +1,34 @@
+C4Context
+    title Balance Crediting Subsystem - System Context (C4 Level 1)
+
+    Person(trader, "Fund Trader", "Views account balances (total, held, available) per currency.")
+    Person(finance, "Finance Operator", "Sets up accounts and currencies, books compensating adjustments, reconciles balances.")
+
+    System(bal, "Balance Crediting / Debiting Subsystem", "Owns currencies, accounts (one per Party and currency, including BTC), immutable ledger entries and derived balances. Posts atomic, balanced, idempotent debit and credit batches, holds and releases funds, rejects overdrafts.")
+
+    System(txn, "Transaction", "Posts one balanced batch per purchase. Reads available balance during pre-processing.")
+    System(som, "Sell Offer Management", "Checks the supplier's base asset and places or releases the hold for a block.")
+    System(tenant, "Tenant Management", "Sends deposit and withdrawal requests and balance reads on behalf of tenants.")
+    System(cgw, "Compliance Gateway", "Publishes Party status: approved, suspended. Drives account creation and freezing.")
+    System(audit, "Audit", "Receives audit events from every subsystem, keeps an append-only tamper-evident history, serves reconstruction of any offer or purchase. Never on the trade path.")
+
+    System_Ext(settlement, "Settlement and Custody", "Banks, blockchain networks and wallet custody. Confirms deposits and withdrawals.")
+    System_Ext(accounting, "Accounting / Finance Reporting", "Receives journals and balance snapshots.")
+
+    Rel(txn, bal, "Posts debit and credit batches, holds, releases", "Atomic batch, idempotency key")
+    Rel(bal, txn, "Returns entry IDs, available balance, rejection code", "Response / event")
+    Rel(som, bal, "Checks and holds block, releases hold", "Command / query")
+    Rel(tenant, bal, "Funding requests, balance reads", "Command / query")
+    Rel(bal, tenant, "Balance updates, request status", "Event")
+    Rel(cgw, bal, "Party approved or suspended: create or freeze accounts", "Events")
+
+    Rel(trader, bal, "Views balances", "HTTPS")
+    Rel(finance, bal, "Sets up accounts, adjusts, reconciles", "HTTPS")
+
+    Rel(settlement, bal, "Deposit and withdrawal confirmations", "Webhooks / batch")
+    Rel(bal, settlement, "Withdrawal instructions, settlement after execution", "Async API")
+    Rel(bal, accounting, "Exports journals and balance snapshots", "Batch / events")
+
+    Rel(bal, audit, "Ledger batches, holds, account status changes", "Events")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

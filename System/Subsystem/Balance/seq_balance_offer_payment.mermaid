@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    participant SO as Sell Offer Subsystem
+    participant BAL as Balance Subsystem
+
+    Note over SO,BAL: Every state change is also emitted as an audit event to the Audit subsystem, asynchronously and off the trade path
+
+    Note over SO,BAL: PHASE 1 - PRE-PAYMENT (after the lock)
+    SO->>BAL: Payment requested (offer id, buyer, seller, price, fee) - sync
+    BAL->>BAL: Check buyer eligible balance
+    alt Not enough money
+        BAL-->>SO: Rejected INSUFFICIENT_BALANCE
+    else Enough money
+        BAL->>BAL: Create REQUESTED records with expiration: PaymentRequest(offer id, buyer, seller, price, fee), buyer debit (price + margin), seller credit (supplier price), platform fee credit (margin)
+        BAL-->>SO: Accepted
+    end
+    Note over SO,BAL: PHASE 2 - VALIDATION IN SELL OFFER
+
+    Note over SO,BAL: PHASE 3 - PAYMENT
+    SO->>SO: Insert the payment (timeout shorter than the record expiration)
+    SO-)BAL: Payment transaction (async, outbox and CDC)
+    alt All records REQUESTED and not expired
+        BAL->>BAL: In ONE transaction: records REQUESTED to EXECUTED and the exchange record inserted
+        BAL-)SO: ExchangeCompleted(offer id) (async, CDC)
+    else Records expired or REJECTED
+        BAL-)SO: PaymentRejected (async, CDC)
+    end
+
+    Note over SO,BAL: No payment transaction arrives before the records expire: nothing to update. The expired records are ignored and the buyer funds are free again

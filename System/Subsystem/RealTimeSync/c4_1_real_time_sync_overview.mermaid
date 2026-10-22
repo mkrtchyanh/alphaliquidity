@@ -1,0 +1,23 @@
+C4Context
+    title Real-time Sync Subsystem - System Context (C4 Level 1)
+
+    Person(buyer, "Buyer (Fund Trader)", "Views offers and depth for a currency pair. Sees every freeze, unfreeze and removal on screen.")
+    Person(admin, "Fund Admin", "Sees own offers appear, lock and disappear.")
+    Person(operator, "Platform Operator", "Monitors delivery latency against the 150 ms target per region.")
+
+    System(rt, "Real-time Sync Subsystem", "Delivers offer state changes to every trader viewing a currency pair. Subscriptions per pair, fan-out across instances and regions, snapshot and resync on connect or gap, connection health, delivery measurement. Carries state, never decides it.")
+
+    System(offers, "Sell Offer (Trading)", "Source of truth for offer state. Publishes versioned state and depth events, serves current state for snapshots. Sends the buyer's own confirmation of success or failure (open decision: directly or through Real-time Sync)..")
+    System(tenant, "Tenant Management", "Confirms the identity and tenant of a connection and what the tenant may see.")
+
+    Rel(buyer, rt, "Connects, subscribes to a pair", "SignalR (WebSocket)")
+    Rel(rt, buyer, "Offer published, locked, available again, executed, withdrawn, depth changed", "SignalR (WebSocket)")
+    Rel(rt, admin, "Own offers: published, locked, executed", "SignalR (WebSocket)")
+    Rel(fundsys, rt, "Subscribes to a pair (open decision)", "API / WebSocket")
+    Rel(operator, rt, "Monitors latency and connections", "HTTPS")
+
+    Rel(offers, rt, "Versioned offer state events and depth events. Buyer confirmation", "Events")
+    Rel(rt, offers, "Reads current offers and depth for snalpshots", "Query")
+    Rel(rt, tenant, "Validates connection identity, tenant visibility", "Query")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

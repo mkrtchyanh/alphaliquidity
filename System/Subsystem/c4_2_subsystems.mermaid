@@ -1,0 +1,68 @@
+C4Context
+    title AlphaLiquidity - Subsystem View (System Design)
+
+    Person(trader, "Fund Trader", "Views offers and depth, purchases blocks.")
+    Person(admin, "Fund Admin", "Manages users, funding requests and block offers.")
+    Person(staff, "Platform Staff", "Operators, finance operators and auditors. Compliance officers work in the external Compliance System.")
+
+    System_Ext(idp, "Identity Provider", "SSO / OIDC, MFA.")
+    System_Ext(market, "Market Data Feed", "Reference prices.")
+    System_Ext(compext, "Compliance System", "KYC / AML / sanctions, limits, surveillance, cases, regulatory reporting.")
+    System_Ext(settlement, "Settlement and Custody", "Banks, blockchains, custodians.")
+    System_Ext(notify, "Notification Service", "Email and webhooks.")
+
+    System_Boundary(alpha, "AlphaLiquidity") {
+        System(tenant, "Tenant Management", "Tenants (hedge funds), users, roles, credentials, isolation.")
+        System(offers, "Sell Offer Management and Trading", "Offer creation, validation, pricing, publishing, offer trading state, atomic lock with TTLs, liquidity depth.")
+        System(rt, "Real-time Sync", "Delivers offer state to viewers of a pair in under 150 ms.")
+        System(txn, "Transaction", "Transaction Requests, validation pipeline, execution, immutable Transactions.")
+        System(bal, "Balance Crediting / Debiting", "Accounts per currency, ledger entries, holds, balances, funding.")
+        System(cgw, "Compliance Gateway", "Integration layer: local replica of Party status, limits and holds, fast decision lookup, trade feed, onboarding relay. Emits every decision it used to Audit.")
+        System(audit, "Audit", "Append-only, tamper-evident history of every state change, decision and administrative action. Reconstructs any offer or purchase. Off the trade path.")
+    }
+
+    Rel(trader, offers, "Purchase click", "Lock request")
+    Rel(rt, trader, "Freeze, unfreeze, removal, new offers", "SignalR")
+    Rel(admin, offers, "Creates and withdraws offers")
+    Rel(admin, tenant, "Users, credentials, funding requests")
+    Rel(staff, tenant, "Onboards and suspends tenants")
+    Rel(staff, offers, "Markup rules, pair settings")
+    Rel(staff, bal, "Adjustments, reconciliation")
+    Rel(staff, compext, "Cases, limits, approvals in its own tools")
+
+    Rel(offers, rt, "Offer state events")
+    Rel(offers, txn, "Lock granted: Transaction Request")
+    Rel(txn, offers, "Phase and outcome")
+    Rel(txn, bal, "Check balance, hold, post, release")
+    Rel(txn, cgw, "Validate buyer")
+    Rel(txn, cgw, "Transactions and failed requests")
+
+    Rel(offers, tenant, "Authorize")
+    Rel(offers, cgw, "Supplier eligibility")
+    Rel(offers, bal, "Check and hold block")
+    Rel(offers, offers, "Publish, withdraw, expire")
+    Rel(offers, offers, "Offer state changes")
+
+    Rel(tenant, cgw, "Onboarding")
+    Rel(cgw, tenant, "Approved, suspended, limits")
+    Rel(cgw, bal, "Party status: create or freeze accounts")
+    Rel(tenant, bal, "Funding requests")
+    Rel(tenant, txn, "Own Transaction history")
+
+    Rel(cgw, compext, "Onboarding, trade feed, queries", "API")
+    Rel(compext, cgw, "Status changes, limits, alerts", "Events / webhooks")
+
+    Rel(market, offers, "Reference prices")
+    Rel(tenant, idp, "Authentication")
+    Rel(tenant, notify, "Notifications")
+    Rel(bal, settlement, "Deposits and withdrawals")
+
+    Rel(offers, audit, "Offer state changes")
+    Rel(offers, audit, "Offer lifecycle and pricing breakdown")
+    Rel(txn, audit, "Request and Transaction history")
+    Rel(bal, audit, "Ledger batches, holds, account status")
+    Rel(tenant, audit, "User, credential and tenant changes")
+    Rel(cgw, audit, "Compliance decisions used by each trade")
+    Rel(staff, audit, "Reviews audit trail, exports records")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

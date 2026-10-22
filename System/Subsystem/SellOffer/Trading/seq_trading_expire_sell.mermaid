@@ -1,0 +1,63 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Fund Admin
+    participant SOM as Sell Offer Management Subsystem
+    participant TEN as Tenant Management Subsystem
+    participant BAL as Balance Crediting / Debiting Subsystem
+    participant RT as Real-time Sync (SignalR)
+    actor Viewers as Traders viewing the pair
+
+    Note over Admin,Viewers: PHASE 1 - WITHDRAWAL
+    Note over Admin,Viewers: Every state change below is also emitted as an audit event to the Audit subsystem, asynchronously and off the trade path
+
+    Admin->>SOM: Withdraw offer (offerId, idempotency key)
+    SOM->>TEN: Authorize (user, role, tenant status)
+    alt Not authorized
+        TEN-->>SOM: Denied
+        SOM-->>Admin: Rejected NOT_AUTHORIZED
+    else Authorized
+        TEN-->>SOM: Allowed
+        SOM->>SOM: Request withdrawal (offerId, reason)
+        SOM->>SOM: Atomic lock: insert lock record (fencing token = lock version, expiration)
+        alt Offer is locked
+            SOM-->>SOM: Rejected OFFER_LOCKED with retryAfter
+            SOM-->>Admin: Cannot withdraw now, offer is being purchased (retryAfter)
+        else Offer already executed, withdrawn or expired
+            SOM-->>SOM: Rejected OFFER_NOT_AVAILABLE
+            SOM-->>Admin: Nothing to withdraw (current status)
+        else Withdrawn
+            SOM-)RT: OfferStateChanged (Withdrawn, version)
+            RT-)Viewers: Offer removed from all screens
+            SOM-->>SOM: Withdrawn
+            SOM->>BAL: Release hold on the block (idempotent)
+            BAL-->>SOM: Released
+            SOM->>SOM: Offer status Withdrawn
+            SOM-->>Admin: Offer withdrawn
+        end
+    end
+
+    Note over SOM,BAL: If the hold release fails, the Hold Timeout Sweeper retries it, so funds are never stranded
+
+    Note over Admin,Viewers: PHASE 2 - EXPIRY (time-in-force)
+
+    loop Expiry sweeper, every tick
+        SOM->>SOM: Find Published offers past their expiry time
+        SOM->>SOM: Request expiry (offerId)
+        SOM->>SOM: Atomic expire, only if state is Available (version+1)
+        alt Offer is locked
+            SOM-->>SOM: Rejected OFFER_LOCKED
+            Note over SOM: Expiry is never forced. The purchase outcome wins and expiry is retried on the next tick
+        else Offer already executed, withdrawn or expired
+            SOM-->>SOM: Rejected OFFER_NOT_AVAILABLE
+        else Expired
+            SOM-)RT: OfferStateChanged (Expired, version)
+            RT-)Viewers: Offer removed from all screens
+            SOM-->>SOM: Expired
+            SOM->>BAL: Release hold on the block (idempotent)
+            BAL-->>SOM: Released
+            SOM->>SOM: Offer status Expired
+            SOM-)Admin: Notification: offer expired
+        end
+    end
+
+    Note over SOM,BAL: Pre-Paid but expired - ledger entries are released by a timeout, so a crash cannot strand funds

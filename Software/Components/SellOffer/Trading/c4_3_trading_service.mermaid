@@ -1,0 +1,41 @@
+C4Component
+    title Sell Offer Service - Component Diagram (C4 Level 3)
+
+    Container(gateway, "API Gateway", ".NET", "Authenticates, routes requests.")
+    Container(balance, "Balance Service", ".NET", "Credit and debit records, exchange records.")
+    Container(cmp, "Compliance Gateway", ".NET", "Local replica of compliance status and limits.")
+    Container(hub, "SignalR Hub Service", "SignalR", "Pushes offer state and depth to viewers.")
+    ContainerQueue(kafka, "Kafka", "Kafka", "Events through CDC.")
+    ContainerDb(db, "Sell Offer DB", "MS SQL Server", "Tables: bid_ask, block, offer, offer_lock, transaction_request, payment_transaction, outbox. CDC reads the outbox from the WAL.")
+
+    Container_Boundary(svc, "Sell Offer Service (one service: configuration, offers, trading, payment transaction)") {
+        Component(admin, "Liquidity Configuration", ".NET", "Fund admin defines Bids, Asks, blocks, price ranges, expirations, limits. Can disable them.")
+        Component(offers, "Offer Management", ".NET", "Fund trader creates offers from blocks with selling prices inside the ranges. Withdraws offers.")
+        Component(fee, "Fee Calculator", ".NET", "Adds the platform margin by block size: global or per-client percentage, minimum, fixed.")
+        Component(lock, "Lock Manager", ".NET", "Acquire, exchange and release locks. One transaction per attempt. See the locking diagram.")
+        Component(purchase, "Purchase Orchestrator", ".NET", "After the lock: creates the Transaction Request, calls Balance, validates compliance, inserts the payment transaction, handles failures.")
+        Component(outcome, "Outcome Consumer", ".NET", "Consumes ExchangeCompleted and PaymentRejected. Checks the fencing token, completes or releases, sets the Transaction Request result.")
+        Component(sweeper, "Sweeper", "Background worker", "Returns expired blocks to the pool, ends stale locks and requests. Emits events for changes made by the clock only.")
+        Component(depth, "Depth Projector", ".NET", "Liquidity depth per pair and price level from Available_For_Buying offers.")
+        Component(repo, "Repositories", "Data access", "Offer, lock, block, Transaction Request and payment transaction tables. Writes the outbox row in the same commit.")
+    }
+
+    Rel(gateway, admin, "Configure", "HTTPS")
+    Rel(gateway, offers, "Create, withdraw, browse, request status", "HTTPS")
+    Rel(gateway, lock, "Purchase", "HTTPS")
+    Rel(offers, fee, "Price with margin")
+    Rel(lock, purchase, "Lock granted")
+    Rel(purchase, balance, "Transaction requested", "REST, sync")
+    Rel(purchase, cmp, "Validate buyer", "Local lookup")
+    Rel(purchase, repo, "Transaction Request, payment transaction")
+    Rel(kafka, outcome, "ExchangeCompleted, PaymentRejected")
+    Rel(outcome, lock, "Complete or release")
+    Rel(sweeper, repo, "Find ended locks, expired offers, stale requests")
+    Rel(admin, repo, "Blocks, ranges")
+    Rel(offers, repo, "Offers")
+    Rel(lock, repo, "Locks, offer row")
+    Rel(repo, db, "SQL")
+    Rel(repo, depth, "Offer changes")
+    Rel(depth, hub, "Depth updates", "Push")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

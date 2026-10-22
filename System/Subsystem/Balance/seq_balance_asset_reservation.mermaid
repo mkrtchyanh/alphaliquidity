@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    participant SO as Sell Offer Subsystem
+    participant BAL as Balance Subsystem
+
+    Note over SO,BAL: Every state change is also emitted as an audit event to the Audit subsystem, asynchronously and off the trade path
+
+    Note over SO,BAL: PHASE 1 - RESERVATION REQUEST
+    SO->>BAL: Assets Reservation Request (requestId as idempotency key, supplier account, asset, volume, expiration) - sync
+    BAL->>BAL: Check eligible balance: EXECUTED credits + EXECUTED and REQUESTED debits
+    alt Not enough assets
+        BAL-->>SO: Rejected INSUFFICIENT_BALANCE
+        Note over SO: Reservation is not created
+    else Enough assets
+        BAL->>BAL: Create Debit record REQUESTED with expiration
+        BAL-->>SO: Accepted (reservation id, expiration)
+        SO-)BAL: OfferCreated (reservation id, offer id) - async, outbox and CDC
+        alt Record still REQUESTED
+            BAL->>BAL: Debit record REQUESTED to EXECUTED
+            BAL-)SO: ReservationCompleted (async, CDC)
+        else Record expired
+            BAL-)SO: ReservationRejected (async, CDC)
+        end
+    end
+
+    Note over SO,BAL: No confirmation arrives: nothing to update. The offer is not Available_For_Buying and the expired record is ignored, so the state stays consistent

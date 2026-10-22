@@ -1,0 +1,42 @@
+---
+title: Lock Status of a Sell Offer (derived from the latest lock record)
+---
+stateDiagram-v2
+    [*] --> NoLock: Offer published
+
+    NoLock --> Active: Insert wins, version 0
+    Active --> Released: release(version) sets released_on
+    Active --> Expired: Database time reaches expiration
+    Expired --> Released: Recovery learns the outcome, then release
+
+    Released --> Active: Insert wins, version + 1
+
+    Released --> [*]: Offer status is Executed, Withdrawn or Expired
+
+    note right of NoLock
+        No record exists.
+        Current version is -1.
+        Offer is Available.
+    end note
+
+    note right of Active
+        released_on is empty and
+        expiration is in the future.
+        Offer is Locked_For_Pre_Processing
+        or Locked_For_Processing by phase.
+        Other attempts get ALREADY_LOCKED
+        with nextRetryTime = expiration.
+    end note
+
+    note right of Expired
+        Derived from the clock, nothing is written.
+        Still unreleased, so still locked and
+        not re-acquirable. Recovery asks Transaction
+        for the outcome first.
+    end note
+
+    note left of Released
+        The only update ever made to a lock
+        record is the one-time write of released_on.
+        Offer is Available again.
+    end note

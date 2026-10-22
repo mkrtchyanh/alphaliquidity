@@ -1,0 +1,74 @@
+sequenceDiagram
+    autonumber
+    actor Buyer as Buyer (Fund Trader)
+    participant RT as Real-time Sync (SignalR)
+    participant SO as Sell Offer Subsystem
+    participant BAL as Balance Crediting / Debiting Subsystem
+    participant CMP as Compliance Gateway
+
+    Note over Buyer,SO: PHASE 1 - LOCKING
+    Note over Buyer,SO: Every state change below is also emitted as an audit event to the Audit subsystem, asynchronously and off the trade path
+
+    Buyer->>SO: Purchase click (offerId)
+    Note over Buyer,SO: Authentication and trader permissions are verified at the API edge
+    SO->>SO: Atomic lock: insert lock record (fencing token = lock version, expiration) and move Available_For_Buying to Available_For_Processing in one transaction
+    alt Offer already locked or gone
+        SO-->>Buyer: Lock failed OFFER_LOCKED with retryAfter, or OFFER_NOT_AVAILABLE
+    else Lock acquired
+        SO-)RT: ASync - OfferStateChanged (Available_For_Processing, version)
+        RT-)Buyer: Button disabled on all screens of the pair, under 150 ms
+    end
+
+    Note over Buyer,SO: PHASE 2 - PRE-PROCESSING (VALIDATION, ONLY AFTER LOCK)
+
+    SO->>CMP: Validate buyer (KYC status, limits, sanctions flag, holds)
+    CMP-->>SO: Result
+
+    alt Validation failed (compliance)
+        SO->>SO: Atomic release: Available_For_Processing to Available_For_Buying (version+1)
+        SO-)RT: ASync - OfferStateChanged (Available_For_Buying, version)
+        RT-)Buyer: Buyers who didn't obtained the lock - Button enabled again on all screens or auto-retry
+        SO-)Buyer: Buyer who obtained the lock - Failure code (INSUFFICIENT_BALANCE, KYC_NOT_APPROVED, LIMIT_EXCEEDED, SANCTIONS_HIT, COMPLIANCE_HOLD)
+    else Validation passed
+        SO->>SO: Atomic move: Available_For_Processing to Available_For_Paying (processing TTL)
+        SO-)RT: ASync - OfferStateChanged (Available_For_Paying, version)
+        Note over RT,Buyer: Button stays disabled, retryAfter now uses the processing TTL
+
+        Note over Buyer,SO: PHASE 3 - PROCESSING
+
+        SO->>BAL: Sync - Pre-Payment request by passing offer id + fee + amount, from account, to account - reserving assets, requesting credit debit entries
+        BAL-->>SO: Result
+        alt Pre-payment rejected
+            BAL-->>SO: Rejected (code)
+            SO->>SO: RequestFailed
+            SO->>SO: Atomic release: Available_For_Paying to Available_For_Buying (version+1)
+            SO-)RT: OfferStateChanged (Available_For_Buying, version)
+            RT-)Buyer: Button enabled again on all screens
+            SO-)Buyer: Failure code
+        else Pre-payment accepted
+            BAL-->>SO: Pre-payment accepted - prepayment (id, offer id, expiration)
+            SO->>SO: Atomic move: Available_For_Paying to Payment_Pending (version+1)
+            SO-)RT: Async - OfferStateChanged (Payment_Pending, version)
+            SO->>SO: Payment transaction created with PENDING status end expiration returned by BAL
+            RT-)Buyer: Offer removed from all screens, Optimistic approach
+            SO-)Buyer: Payment accepted for processing confirmation
+            SO-)BAL: Async CDC - payment transaction record
+            BAL-)SO: Async CDC - ExchangeCompleted
+            alt Pre-payment complete
+                BAL->>SO: Pre-payment complete - balance reservation  (reservation id, offer id, status)
+                SO->>SO: Atomic release: Payment_Pending to Executed (version+1)
+                SO-)RT: Async - OfferStateChanged (Executed, version)
+                RT-)Buyer: Offer removed from all screens, added to Executed Transactions log
+                SO-)Buyer: Success confirmation
+                Note over SO: External settlement is started asynchronously after execution
+            else
+                BAL->>SO: Pre-payment expired - payment (id, offer id, status)
+                SO->>SO: Atomic release: Payment_Pending to Available_For_Buying (version+1)
+                SO-)RT: Async - OfferStateChanged (Available_For_Buying, version)
+                RT-)Buyer: Offer became Available_For_Buying,  Payment transaction REJECTED
+                SO-)Buyer: Failure code
+            end
+        end
+    end
+
+    Note over SO,BAL: Pre-Paid but expired - ledger entries are released by a timeout, so a crash cannot strand funds

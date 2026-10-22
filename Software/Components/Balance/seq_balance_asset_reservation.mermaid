@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    participant SO as Sell Offer Service
+    participant BAL as Balance Service
+    participant DB as Balance DB
+
+    Note over SO: Every state change is also emitted as an audit event, asynchronously and off the trade path
+    Note over SO: PHASE 1 - RESERVATION REQUEST (sync REST)
+    SO ->> BAL: AssetReservationRequest ( supplier account, asset, volume, expiration)
+    Note over BAL, DB: ONE database transaction, check and create are atomic per account
+    BAL ->> DB: Eligible balance = EXECUTED credits + EXECUTED and REQUESTED debits
+    alt Not enough assets
+        BAL -->> SO: Rejected INSUFFICIENT_BALANCE
+        Note over SO: Reservation is not created
+    else Enough assets
+        BAL ->> DB: Insert Debit record REQUESTED (source type asset reservation, source id requestId, expiration)
+        BAL -->> SO: Accepted debit record as reservation (debit record id, expiration)
+        Note over SO: Creates the offer, its expiry is not later than the reservation expiration
+        Note over SO, EXP: PHASE 2 - CONFIRMATION (async, outbox and CDC)
+        SO -) BAL: OfferCreated (reservation id, offer id) - outbox row written with the offer, CDC, Kafka
+        BAL ->> BAL: Idempotent by event id
+        BAL ->> DB: In ONE transaction: Debit record REQUESTED to EXECUTED, only if not expired, outbox row
+        alt Record still REQUESTED
+            BAL -) SO: ReservationCompleted (reservation id, offer id) - outbox, CDC
+        else Record expired or REJECTED
+            BAL -) SO: ReservationRejected (reservation id, code) - outbox, CDC
+        end
+    end
+
+    Note over BAL: The funds are free again by themselves, an expired record is not counted in the eligible balance

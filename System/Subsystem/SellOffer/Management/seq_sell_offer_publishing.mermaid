@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    actor Admin as Fund Admin
+    participant TEN as Tenant Management Subsystem
+    participant SOM as Sell Offer - Management
+    participant BAL as Balance Crediting / Debiting Subsystem
+    participant CMP as Compliance Gateway
+    participant RT as Real-time Sync (SignalR)
+    Note over Admin, RT: PHASE 1 - SUBMIT AND AUTHORIZE
+    Note over Admin, RT: Every state change below is also emitted as an audit event to the Audit subsystem, asynchronously and off the trade path
+    Admin ->> SOM: Create offer (pair, volume, supplier price, idempotency key)
+    SOM ->> TEN: Authorize (user, role, tenant status)
+    alt Not authorized or tenant not active
+        TEN -->> SOM: Denied
+        SOM -->> Admin: Rejected NOT_AUTHORIZED or TENANT_SUSPENDED
+    else Authorized
+        TEN -->> SOM: Allowed (tenantId)
+        Note over Admin, RT: PHASE 2 - VALIDATION
+        SOM ->> SOM: Validate input (pair permitted, volume and price within configured limits)
+        SOM ->> SOM: Get reference price for the pair: Liquidity depth Order book
+        SOM -->> SOM: Reference price
+        SOM ->> CMP: Check supplier approved, pair permitted, size within limits
+        CMP -->> SOM: Result
+        alt Validation failed
+            SOM -->> Admin: Rejected (INVALID_OFFER, PRICE_OFF_MARKET, INSUFFICIENT_BALANCE, NOT_ELIGIBLE, LIMIT_EXCEEDED)
+        else Validation passed
+            SOM ->> BAL: Assets Reservation Request - AssetReservationRequest with Debit record with status REQUESTED and expiration
+            alt Reservation accepted
+                BAL -->> SOM: Result(Asset reservation request id, expiration)
+                Note over Admin, RT: PHASE 3 - PRICING AND PUBLISHING
+                SOM ->> SOM: Create offer (offerId, pair, block, listed price, supplier, asset reservation id) with timeout, expiry with asset reservation expiration
+                alt Offer creation failed
+                    SOM -->> Admin: Rejected PUBLISH_FAILED
+                else Offer Created
+                    SOM -) BAL: Async CDC - update asset reservation status to EXECUTED, Debit record with status EXECUTED
+                    BAL -) SOM: Async CDC - reservation complete, Debit done
+                    SOM ->> SOM: Offer status Available_For_Buying
+                    SOM -) RT: OfferStateChanged (Available, version)
+                    RT -) Admin: Offer visible to traders viewing the pair
+                    SOM -->> Admin: Offer published (offerId)
+                end
+            else
+                SOM -->> Admin: Rejected ( INSUFFICIENT_BALANCE)
+            end
+        end
+    end
+
+    Note over SOM, BAL: Pre-Paid but expired - ledger entries are released by a timeout, so a crash cannot strand funds

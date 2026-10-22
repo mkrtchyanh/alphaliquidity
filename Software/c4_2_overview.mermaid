@@ -1,0 +1,99 @@
+C4Container
+    title AlphaLiquidity - Container Diagram (C4 Level 2)
+
+    Person(trader, "Fund Trader", "Views offers and depth, creates offers from blocks, purchases blocks.")
+    Person(admin, "Fund Admin", "Manages users, funding requests, Bids, Asks and blocks.")
+    Person(staff, "Platform Staff", "Operators, compliance officers, finance operators and auditors.")
+
+    System_Ext(fundsys, "Fund Trading Systems", "Fund bots that use the API.")
+    System_Ext(idp, "Identity Provider", "SSO / OIDC, MFA.")
+    System_Ext(compsys, "Compliance System", "External. Owns onboarding, KYC, AML, limits and sanctions.")
+    System_Ext(settlement, "Settlement and Custody", "Banks, blockchains, wallet custody.")
+    System_Ext(accounting, "Accounting / Finance Reporting", "Journals and balance snapshots.")
+    System_Ext(notify, "Notification Service", "Email and webhooks.")
+
+    System_Boundary(alpha, "AlphaLiquidity") {
+        Container(webapp, "Trading Web App", "SPA, SignalR client", "Offer board, depth, Purchase button, balances, offer and user management.")
+        Container(boapp, "Backoffice Web App", "SPA", "Tenant onboarding, fee rules, finance and audit views.")
+        Container(gateway, "API Gateway", "ASP.NET Core, YARP", "Authentication, rate limiting, tenant routing, API credentials.")
+        ContainerQueue(kafka, "Kafka", "Kafka", "Durable internal events. Fed by the outbox tables through WAL-based CDC.")
+        Container(obs, "Observability and SLA Probes", "Metrics, tracing, synthetic clients", "Measures freeze latency per region against the 150 ms target.")
+
+        Boundary(rtb, "Real-time Sync", "subsystem") {
+            Container(hub, "SignalR Hub Service", "ASP.NET Core SignalR, scaled out", "Group per currency pair. Client channel only: freeze, unfreeze, removal, new offers, snapshots for resync.")
+            ContainerQueue(backplane, "SignalR Backplane", "Redis / Azure SignalR, decision pending", "Fan-out across hub instances and regions.")
+        }
+
+        Boundary(offb, "Sell Offer", "subsystem") {
+            Container(offers, "Sell Offer Service", ".NET", "Liquidity configuration, offers, fee margin, locking, Transaction Request, payment transaction, liquidity depth. One service.")
+            ContainerDb(offerdb, "Sell Offer DB", "MS SQL Server", "Bid and Ask, block, offer, offer_lock, transaction request, payment transaction, outbox. CDC reads the WAL.")
+        }
+
+        Boundary(balb, "Balance", "subsystem") {
+            Container(bal, "Balance Service", ".NET", "Credit and debit records, derived balances, exchange records, funding.")
+            ContainerDb(baldb, "Balance DB", "MS SQL Server", "Credit and debit records, exchange records, outbox. CDC reads the WAL.")
+            Container(settleadp, "Settlement Adapter", "Worker", "Deposit and withdrawal flows with banks, blockchains and custody.")
+        }
+
+        Boundary(cmpb, "Compliance Gateway", "subsystem") {
+            Container(comp, "Compliance Gateway", ".NET", "Local replica of party status and limits, synced from the external Compliance System.")
+            ContainerDb(compdb, "Compliance Replica", "MS SQL Server", "Status and limits per Party.")
+        }
+
+        Boundary(tenb, "Tenant Management", "subsystem") {
+            Container(tenant, "Tenant Service", ".NET", "Tenants, users, roles, API credentials, tenant isolation.")
+            ContainerDb(tendb, "Tenant DB", "MS SQL Server", "Tenant profile, users, roles, credentials, settings.")
+            Container(notifier, "Notification Worker", "Worker", "Sends tenant notifications and webhooks from events.")
+        }
+
+        Boundary(audb, "Audit", "subsystem") {
+            Container(audit, "Audit Service", ".NET", "Consumes events from Kafka and keeps the immutable audit trail. Off the trade path.")
+            ContainerDb(auditdb, "Audit Store", "Append-only", "Audit events.")
+        }
+    }
+
+    Rel(trader, webapp, "Uses", "HTTPS")
+    Rel(admin, webapp, "Uses", "HTTPS")
+    Rel(staff, boapp, "Uses", "HTTPS")
+    Rel(fundsys, gateway, "API calls", "HTTPS, API credentials")
+
+    Rel(webapp, gateway, "Commands and queries", "HTTPS")
+    Rel(boapp, gateway, "Commands and queries", "HTTPS")
+    Rel(hub, webapp, "Pushes freeze, unfreeze, removal, new offers", "SignalR")
+    Rel(hub, backplane, "Fan-out", "Pub/sub")
+    Rel(gateway, idp, "Validates tokens", "OIDC")
+
+    Rel(gateway, offers, "Configure, create, withdraw, purchase, request status", "HTTPS")
+    Rel(gateway, bal, "Balance reads, funding requests", "HTTPS")
+    Rel(gateway, tenant, "Tenant and user administration", "HTTPS")
+
+    Rel(offers, offerdb, "Atomic transactions, outbox row in the same commit", "SQL")
+    Rel(offers, bal, "Transaction requested", "REST, sync")
+    Rel(offers, comp, "Validate buyer", "Local lookup")
+    Rel(offers, tenant, "Authorize user and tenant", "REST")
+
+    Rel(offerdb, kafka, "Offer events and payment transaction", "Outbox, CDC")
+    Rel(bal, baldb, "Atomic transactions, outbox row in the same commit", "SQL")
+    Rel(baldb, kafka, "ExchangeCompleted, PaymentRejected", "Outbox, CDC")
+    Rel(kafka, bal, "Payment transaction", "Subscribe")
+    Rel(kafka, offers, "ExchangeCompleted, PaymentRejected", "Subscribe")
+    Rel(kafka, hub, "Events for client updates and snapshots", "Subscribe")
+    Rel(offers, hub, "Freeze and unfreeze (hub feeding path open)", "Open")
+
+    Rel(bal, settleadp, "Deposit and withdrawal instructions", "Commands")
+    Rel(settleadp, settlement, "Settlement and custody", "Bank / blockchain APIs")
+    Rel(bal, accounting, "Journals and snapshots", "Batch / events")
+
+    Rel(comp, compdb, "Reads and writes", "SQL")
+    Rel(compsys, comp, "Status and limit updates", "Feed")
+
+    Rel(tenant, tendb, "Reads and writes", "SQL")
+    Rel(tenant, idp, "Users, federation", "OIDC")
+    Rel(kafka, notifier, "Offer, funding and status events", "Subscribe")
+    Rel(notifier, notify, "Sends", "API")
+
+    Rel(kafka, audit, "All domain events", "Subscribe")
+    Rel(audit, auditdb, "Appends", "Write")
+    Rel(obs, hub, "Synthetic clients measure latency", "SignalR")
+
+    UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="2")

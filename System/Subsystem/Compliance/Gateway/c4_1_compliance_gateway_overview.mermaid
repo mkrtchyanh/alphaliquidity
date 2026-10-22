@@ -1,0 +1,30 @@
+C4Context
+    title Compliance Gateway - System Context (C4 Level 1)
+
+    Person(officer, "Compliance Officer", "Works in the external Compliance System: cases, limits, approvals, reports.")
+
+    System(cgw, "Compliance Gateway", "Integration layer in front of the external Compliance System. Holds a local replica of Party status, limits and holds with valid-until time and version. Answers eligibility lookups locally and maps results to failure codes. Sends the trade feed and relays onboarding. Emits which status and decision each trade used to Audit.")
+
+    System(txn, "Transaction", "Validates the buyer during pre-processing. Provides executed Transactions and failed requests.")
+    System(som, "Sell Offer Management", "Checks supplier eligibility, permitted pair and size limits.")
+    System(tenant, "Tenant Management", "Starts onboarding. Enforces approved or suspended status on logins.")
+    System(bal, "Balance Crediting / Debiting", "Creates or freezes accounts on Party status changes.")
+    System(audit, "Audit", "Receives audit events from every subsystem, keeps an append-only tamper-evident history, serves reconstruction of any offer or purchase. Never on the trade path.")
+
+    System_Ext(compext, "Compliance System", "KYC / AML / sanctions screening, limits, surveillance, cases, regulatory reporting. Source of truth for compliance decisions.")
+
+    Rel(txn, cgw, "Validate buyer: status, limits, sanctions flag, holds", "Local lookup")
+    Rel(txn, cgw, "Transactions and failed requests", "Events")
+    Rel(som, cgw, "Supplier eligibility, pair, size limits", "Local lookup")
+    Rel(tenant, cgw, "Onboarding requests", "Command")
+    Rel(cgw, tenant, "Approved, suspended, limit changes", "Events")
+    Rel(cgw, bal, "Party status changes", "Events")
+
+    Rel(cgw, compext, "Onboarding, trade feed, status queries", "API")
+    Rel(compext, cgw, "Status changes, limits, holds, alerts", "Events / webhooks")
+
+    Rel(officer, compext, "Decides and reviews", "Its own tools")
+
+    Rel(cgw, audit, "Every compliance decision with status version and rule used", "Events")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

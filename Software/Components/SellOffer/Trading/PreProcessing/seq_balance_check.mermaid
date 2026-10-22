@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    participant TradingService as Trading Service
+    participant TxService as Transaction Service
+    participant Balance as Balance Service
+    participant Gateway as Compliance Gateway
+
+    TradingService->>TxService: Submit Transaction Request
+    TxService->>Balance: Check Available Balance
+
+    alt Insufficient Balance
+        Balance-->>TxService: Balance Insufficient
+        TxService-->>TradingService: Reject (Insufficient Funds)
+    else Balance Available
+        Balance-->>TxService: Balance Confirmed
+
+        opt Reservation Chosen = True
+            TxService->>Balance: Create Hold (Amount, TTL)
+            Balance-->>TxService: Hold Created (Reservation ID)
+        end
+
+        TxService->>Gateway: Screen Transaction (Payload, Tx ID)
+
+        alt Compliance Approved
+            Gateway-->>TxService: Status: APPROVED
+            alt Reservation Active
+                TxService->>Balance: Capture / Settle Hold
+            else Direct Debit
+                TxService->>Balance: Debit Account
+            end
+            Balance-->>TxService: Transaction Settled
+            TxService-->>TradingService: Success (OK)
+
+        else Compliance Rejected
+            Gateway-->>TxService: Status: REJECTED
+            opt Reservation Active
+                TxService->>Balance: Release Hold (Compensating Action)
+                Balance-->>TxService: Hold Released
+            end
+            TxService-->>TradingService: Reject (Compliance Failure)
+        end
+    end

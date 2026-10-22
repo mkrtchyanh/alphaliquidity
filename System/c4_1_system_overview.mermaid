@@ -1,0 +1,35 @@
+C4Context
+    title AlphaLiquidity - System Context (C4 Level 1)
+
+    Person(trader, "Fund Trader", "Views offers and depth, purchases blocks All-or-None.")
+    Person(admin, "Fund Admin", "Manages the fund's users, credentials, funding requests and block offers.")
+    Person(ops, "Platform Operator", "Onboards tenants, configures pairs and markup rules, monitors locks and the latency SLA.")
+    Person(officer, "Compliance Officer", "Works in the external Compliance System: cases, limits, approvals, reports.")
+    Person(auditor, "Auditor", "Reviews the audit trail and exports records for regulator requests.")
+
+    System(alpha, "AlphaLiquidity", "Institutional trading platform. Publishes block offers, enforces atomic locks, validates and executes purchases, keeps the ledger, syncs UI state in real time (under 150 ms).")
+
+
+    System_Ext(idp, "Identity Provider", "SSO / OIDC, MFA.")
+    System_Ext(market, "Market Data Feed", "Reference prices.")
+    System_Ext(compext, "Compliance System", "KYC / AML / sanctions, limits, surveillance, cases, regulatory reporting.")
+    System_Ext(settlement, "Settlement and Custody", "Banks, blockchains, custodians. Asynchronous.")
+    System_Ext(accounting, "Accounting / Finance Reporting", "Journals and balance snapshots.")
+    System_Ext(notify, "Notification Service", "Email and webhooks.")
+
+    Rel(trader, alpha, "Views offers, purchases blocks", "HTTPS, SignalR (WebSocket)")
+    Rel(admin, alpha, "Manages users, funding, offers", "HTTPS")
+    Rel(ops, alpha, "Configures and monitors", "HTTPS")
+
+    Rel(officer, compext, "Decides and reviews", "Its own tools")
+    Rel(auditor, alpha, "Reviews audit trail, exports records", "HTTPS")
+
+    Rel(alpha, idp, "Authenticates users", "OIDC")
+    Rel(market, alpha, "Reference prices", "Feed")
+    Rel(alpha, compext, "Onboarding, trade feed, status queries", "API")
+    Rel(compext, alpha, "Status changes, limits, alerts", "Events / webhooks")
+    Rel(alpha, settlement, "Deposits, withdrawals, settlement", "Async, bank and blockchain APIs")
+    Rel(alpha, accounting, "Journals and balance snapshots", "Batch / events")
+    Rel(alpha, notify, "Notifications and webhooks", "API")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

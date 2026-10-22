@@ -1,0 +1,49 @@
+sequenceDiagram
+    autonumber
+    participant SO as Sell Offer Service
+    participant BAL as Balance Service
+    participant DB as Balance DB
+
+    Note over SO: Every state change is also emitted as an audit event, asynchronously and off the trade path
+
+    Note over SO: PHASE 1 - TRANSACTION REQUESTED (sync REST, after the lock)
+    SO->>BAL: Transaction requested (requestId as idempotency key, offer id, buyer account, seller account, price, margin)
+    BAL->>DB: Find the records by requestId
+    alt Records already exist
+        DB-->>BAL: Existing result
+        BAL-->>SO: Existing result
+    else New request
+        Note over BAL,DB: ONE database transaction, check and create are atomic per buyer account
+        BAL->>DB: Buyer eligible balance = EXECUTED credits + EXECUTED and REQUESTED debits
+        alt Not enough money
+            BAL-->>SO: Rejected INSUFFICIENT_BALANCE
+        else Enough money
+            BAL->>DB: Insert REQUESTED records with expiration, source type offer, source id offer id: buyer debit (price + margin), seller credit (supplier price), platform fee credit (margin)
+            BAL-->>SO: Accepted (expiration)
+        end
+    end
+
+    Note over SO: PHASE 2 - VALIDATION IN SELL OFFER
+    opt Validation failed
+        SO->>BAL: Reject the records (requestId)
+        BAL->>DB: All three records REQUESTED to REJECTED
+        BAL-->>SO: Done
+    end
+
+    Note over SO,EXP: PHASE 3 - PAYMENT (async, outbox and CDC)
+    SO->>SO: Insert the payment transaction in a new database transaction with its outbox row (timeout shorter than the record expiration)
+    SO-)BAL: Payment transaction (outbox, CDC, Kafka)
+    BAL->>BAL: Idempotent by event id
+    Note over BAL,DB: ONE database transaction
+    BAL->>DB: Read the three records of the request
+    alt All records REQUESTED and not expired
+        BAL->>DB: Records REQUESTED to EXECUTED
+        BAL->>DB: Insert the exchange record (immutable Transaction)
+        BAL->>DB: Insert outbox row ExchangeCompleted
+        BAL-)SO: ExchangeCompleted (CDC)
+    else Records expired or REJECTED
+        BAL->>DB: Insert outbox row PaymentRejected (code)
+        BAL-)SO: PaymentRejected (CDC)
+    end
+
+    Note over BAL: The buyer funds are free again by themselves. Sell Offer ends the request by its own sweeper

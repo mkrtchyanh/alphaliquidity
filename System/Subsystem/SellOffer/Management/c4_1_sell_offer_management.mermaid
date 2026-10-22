@@ -1,0 +1,35 @@
+C4Context
+    title Sell Offer Management Subsystem - System Context (C4 Level 1)
+
+    Person(admin, "Fund Admin", "Creates, edits and withdraws block offers for the tenant (supplier). Views own offers and their status.")
+    Person(operator, "Platform Operator", "Configures pairs, markup rules and offer limits. Can withdraw an offer in an emergency.")
+
+    System(som, "Sell Offer Management Subsystem", "Owns the offer definition and its pre-trading lifecycle:  Published, Withdrawn, Expired. Validates the offer, reserves the block, applies the markup to build the listed price, publishes the offer for trading.")
+
+    System(tenant, "Tenant Management", "Authorizes the user and role, confirms tenant status and data isolation.")
+    System(balance, "Balance Crediting / Debiting", "Checks the supplier has the base asset for the block, holds it on publishing, releases it on withdrawal or expiry.")
+    System(cgw, "Compliance Gateway", "Local replica of compliance status: confirms the supplier is approved, the pair is permitted and the offer size is within limits.")
+    System(offers, "Sell Offer (Trading)", "Owns the trading state and the atomic lock. Receives published offers as Available, applies withdrawals and expiry, reports state changes back.")
+    System(audit, "Audit", "Receives audit events from every subsystem, keeps an append-only tamper-evident history, serves reconstruction of any offer or purchase. Never on the trade path.")
+
+
+    System_Ext(market, "Market Data Feed", "Reference prices used to reject offers far from the market.")
+    System_Ext(notify, "Notification Service", "Email and webhooks to the tenant about offer events.")
+
+    Rel(admin, som, "Creates, edits, withdraws and views offers", "HTTPS")
+    Rel(operator, som, "Configures pairs, markup and limits", "HTTPS")
+
+    Rel(market, som, "Reference prices", "Feed")
+
+    Rel(som, tenant, "Authorizes user, checks tenant status", "Query")
+    Rel(som, cgw, "Checks supplier eligibility, pair, size limits", "Local lookup")
+    Rel(som, balance, "Checks and holds block, releases hold", "Command / query")
+
+    Rel(som, offers, "Publishes offer as Available, requests withdrawal or expiry", "Command")
+    Rel(offers, som, "Offer state changes (locked, available, executed)", "Event")
+
+    Rel(som, notify, "Offer published, withdrawn, executed", "API")
+
+    Rel(som, audit, "Offer lifecycle: Draft, Validating, Published, Withdrawn, Expired, with pricing breakdown", "Events")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
