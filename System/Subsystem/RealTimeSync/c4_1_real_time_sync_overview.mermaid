@@ -13,7 +13,6 @@ C4Context
     Rel(buyer, rt, "Connects, subscribes to a pair", "SignalR (WebSocket)")
     Rel(rt, buyer, "Offer published, locked, available again, executed, withdrawn, depth changed", "SignalR (WebSocket)")
     Rel(rt, admin, "Own offers: published, locked, executed", "SignalR (WebSocket)")
-    Rel(fundsys, rt, "Subscribes to a pair (open decision)", "API / WebSocket")
     Rel(operator, rt, "Monitors latency and connections", "HTTPS")
 
     Rel(offers, rt, "Versioned offer state events and depth events. Buyer confirmation", "Events")
