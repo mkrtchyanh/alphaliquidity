@@ -27,8 +27,10 @@ flowchart LR
     subgraph kafkaseg["Kafka nodes"]
         k1["Broker 1"]
         k2["Broker 2<br/>min.insync.replicas=2"]
+        k3["Broker async replica"]
         conn["Kafka Connect, Debezium<br/>same hosts as the brokers<br/>CDC from the primary"]
         k1 <--> k2
+        k1 <--> k3
         conn --> k1
     end
 
